@@ -1,3 +1,5 @@
+import model
+
 class Result:
     def __init__(self, ok, msg = ''):
         self.ok = ok
@@ -7,9 +9,15 @@ class Result:
         return 'Result<{}, {}>'.format(self.ok, self.msg)
 
 def on_create_tournament(user, name):
+    m = model.Model()
+    m.init()
+    #r = m.add_tournament(user, name)
+    #handle errors?
+    #flood protection - can't create new tournament if the last was created in the last x seconds
     return Result(False, 'Unimplemented')
 
 def on_delete_tournament(user):
+    # protection: can't delete tournament after x seconds (hours?)
     return Result(False, 'No tournament to delete')
 
 def on_list_tournaments():

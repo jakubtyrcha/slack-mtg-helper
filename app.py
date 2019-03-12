@@ -1,14 +1,12 @@
 from flask import abort, Flask, jsonify, request
 from cmds import Result, handle_command
+import os
 
 app = Flask(__name__)
 
-SLACK_VERIFICATION_TOKEN = '_'
-SLACK_TEAM_ID = 'TGT675929'
-
 def is_request_valid(request):
-    is_token_valid = request.form['token'] == SLACK_VERIFICATION_TOKEN
-    is_team_id_valid = request.form['team_id'] == SLACK_TEAM_ID
+    is_token_valid = request.form['token'] == os.environ['SLACK_VERIFICATION_TOKEN']
+    is_team_id_valid = request.form['team_id'] == os.environ['SLACK_TEAM_ID']
 
     return is_token_valid and is_team_id_valid
 
