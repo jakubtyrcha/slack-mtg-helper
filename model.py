@@ -67,18 +67,6 @@ class Model:
                     'ctr': 0,
                 }
             )
-            self.counters_table.put_item(
-                Item={
-                    'name': 'DuelId',
-                    'ctr': 0,
-                }
-            )
-            self.counters_table.put_item(
-                Item={
-                    'name': 'HistoryId',
-                    'ctr': 0,
-                }
-            )
         except self.dynamodb_client.exceptions.ResourceInUseException:
             self.counters_table = dynamodb.Table('Counters')
 
@@ -169,19 +157,6 @@ class Model:
         except self.dynamodb_client.exceptions.ResourceInUseException:
             self.history_table = dynamodb.Table('History')
 
-    def gen_id(self, name):
-        response = self.counters_table.update_item(
-            Key={
-                'name': name
-            },
-            UpdateExpression="set ctr = ctr+:val",
-            ExpressionAttributeValues={
-                ':val': 1
-            },
-            ReturnValues="UPDATED_NEW"
-        )
-        return int(response['Attributes']['ctr'])
-
     def last_tournament_id(self):
         list = self.get_tournaments()
         if len(list) == 0:
@@ -193,13 +168,26 @@ class Model:
         return sorted(result['Items'], key=lambda x: x['date'])
 
     def add_tournament(self, name, user, date):
-        tid = self.gen_id('TournamentId')
+        response = self.counters_table.update_item(
+            Key={
+                'name': 'TournamentId'
+            },
+            UpdateExpression="set ctr = ctr+:val",
+            ExpressionAttributeValues={
+                ':val': 1
+            },
+            ReturnValues="UPDATED_NEW"
+        )
+        tid = int(response['Attributes']['ctr'])
+
         self.tournaments_table.put_item(
                Item={
                    'id': tid,
                    'name': name,
                    'date': date,
-                   'deleted' : False
+                   'deleted' : False,
+                   'did' : 0,
+                   'hid' : 0
                 }
             )
 
@@ -215,8 +203,18 @@ class Model:
         )
 
     def add_duel(self, tid, player0, player1, score, user, date):
-        id = self.gen_id('DuelId')
-        hid = self.gen_id('HistoryId')
+        response = self.tournaments_table.update_item(
+            Key={
+                'id': tid
+            },
+            UpdateExpression="set did = did+:val, hid = hid+:val",
+            ExpressionAttributeValues={
+                ':val': 1
+            },
+            ReturnValues="UPDATED_NEW"
+        )
+        id = int(response['Attributes']['did'])
+        hid = int(response['Attributes']['hid'])
 
         result = self.duels_table.put_item(
             Item={
@@ -241,7 +239,17 @@ class Model:
         )
 
     def delete_duel(self, tid, id, user, date):
-        hid = self.gen_id('HistoryId')
+        response = self.tournaments_table.update_item(
+            Key={
+                'id': tid
+            },
+            UpdateExpression="set hid = hid+:val",
+            ExpressionAttributeValues={
+                ':val': 1
+            },
+            ReturnValues="UPDATED_NEW"
+        )
+        hid = int(response['Attributes']['hid'])
 
         self.duels_table.update_item(
             Key={
@@ -305,12 +313,12 @@ if __name__ == "__main__":
         model.delete_tournament(1, '@joe', '2019')
         model.add_tournament('Draft 1', '@joe', '2019-08-22 11:12:11')
 
-        model.add_duel(0, '@joe', '@jakub', '2-1', '@joe', '2019-08-22 11:12:11')
         model.add_duel(1, '@joe', '@jakub', '2-1', '@joe', '2019-08-22 11:12:11')
-        model.add_duel(1, '@joe', '@jakub', '2-1', '@joe', '2019-08-22 11:12:11')
-        model.add_duel(1, '@joe', '@jakub', '3-1', '@joe', '2019-08-22 11:12:11')
-        model.add_duel(1, '@joe', '@jakub', '4-1', '@joe', '2019-08-22 11:12:11')
-        model.delete_duel(1, 2, '@joe', '2019-08-22 11:12:11')
+        model.add_duel(2, '@joe', '@jakub', '2-1', '@joe', '2019-08-22 11:12:11')
+        model.add_duel(2, '@joe', '@jakub', '2-1', '@joe', '2019-08-22 11:12:11')
+        model.add_duel(2, '@joe', '@jakub', '3-1', '@joe', '2019-08-22 11:12:11')
+        model.add_duel(2, '@joe', '@jakub', '4-1', '@joe', '2019-08-22 11:12:11')
+        model.delete_duel(2, 2, '@joe', '2019-08-22 11:12:11')
 
         print(len(model.get_duels(1)))
 
