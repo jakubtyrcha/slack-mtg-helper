@@ -5,6 +5,8 @@ from operator import add
 
 from model import Duel, History
 
+def pretty_tournaments(list):
+    return tabulate([[x['id'], x['name'], x['date']] for x in list], headers = ['id', 'name', 'date'])
 
 def pretty_duels(duels):                                                                                              
     def as_row(entry):                                                                                                

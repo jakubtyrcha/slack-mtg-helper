@@ -63,7 +63,7 @@ class Model:
 
             self.counters_table.put_item(
                 Item={
-                    'name': 'TableId',
+                    'name': 'TournamentId',
                     'ctr': 0,
                 }
             )
@@ -182,20 +182,31 @@ class Model:
         )
         return int(response['Attributes']['ctr'])
 
-    def add_tournament(self, id, name, date):
+    def last_tournament_id(self):
+        list = self.get_tournaments()
+        if len(list) == 0:
+            return -1
+        return int(max(list, key=lambda x: x['date'])['id'])
+
+    def get_tournaments(self):
+        result = self.tournaments_table.scan()
+        return sorted(result['Items'], key=lambda x: x['date'])
+
+    def add_tournament(self, name, user, date):
+        tid = self.gen_id('TournamentId')
         self.tournaments_table.put_item(
                Item={
-                   'id': id,
+                   'id': tid,
                    'name': name,
                    'date': date,
                    'deleted' : False
                 }
             )
 
-    def delete_tournament(self, id):
+    def delete_tournament(self, tid, user, date):
         self.tournaments_table.update_item(
             Key={
-                'id': id
+                'id': tid
             },
             UpdateExpression="set deleted=:b",
             ExpressionAttributeValues={
@@ -203,10 +214,11 @@ class Model:
             }
         )
 
-    def add_duel(self, id, user, date, tid, player0, player1, score):
+    def add_duel(self, tid, player0, player1, score, user, date):
+        id = self.gen_id('DuelId')
         hid = self.gen_id('HistoryId')
 
-        self.duels_table.put_item(
+        result = self.duels_table.put_item(
             Item={
                 'id': id,
                 'tid' : tid,
@@ -228,7 +240,7 @@ class Model:
             }
         )
 
-    def delete_duel(self, id, user, date, tid):
+    def delete_duel(self, tid, id, user, date):
         hid = self.gen_id('HistoryId')
 
         self.duels_table.update_item(
@@ -260,7 +272,7 @@ class Model:
         )
         return [Duel(x) for x in response['Items']]
 
-    def get_duels_with_deleted(self, tid):
+    def get_duels_including_deleted(self, tid):
         response = self.duels_table.query(
             KeyConditionExpression=Key('tid').eq(tid)
         )
@@ -289,21 +301,23 @@ if __name__ == "__main__":
     try:
         model.create_tables()
 
-        model.add_tournament(0, 'Draft 0', '2019-08-11')
-        model.delete_tournament(0)
-        model.add_tournament(1, 'Draft 1', '2019-08-22 11:12:11')
+        model.add_tournament('Draft 0', '@joe', '2019-08-11')
+        model.delete_tournament(1, '@joe', '2019')
+        model.add_tournament('Draft 1', '@joe', '2019-08-22 11:12:11')
 
-        model.add_duel(model.gen_id('DuelId'), '@joe', '2019-08-22 11:12:11', 0, '@joe', '@jakub', '2-1')
-        did = model.gen_id('DuelId')
-        model.add_duel(did, '@joe', '2019-08-22 11:12:11', 1, '@joe', '@jakub', '2-1')
-        model.add_duel(model.gen_id('DuelId'), '@joe', '2019-08-22 11:12:11', 1, '@joe', '@jakub', '2-1')
-        model.add_duel(model.gen_id('DuelId'), '@joe', '2019-08-22 11:12:11', 1, '@joe', '@jakub', '3-1')
-        model.add_duel(model.gen_id('DuelId'), '@joe', '2019-08-22 11:12:11', 1, '@joe', '@jakub', '4-1')
-        model.delete_duel(did, '@joe', '2019-08-22 11:12:11', 1)
+        model.add_duel(0, '@joe', '@jakub', '2-1', '@joe', '2019-08-22 11:12:11')
+        model.add_duel(1, '@joe', '@jakub', '2-1', '@joe', '2019-08-22 11:12:11')
+        model.add_duel(1, '@joe', '@jakub', '2-1', '@joe', '2019-08-22 11:12:11')
+        model.add_duel(1, '@joe', '@jakub', '3-1', '@joe', '2019-08-22 11:12:11')
+        model.add_duel(1, '@joe', '@jakub', '4-1', '@joe', '2019-08-22 11:12:11')
+        model.delete_duel(1, 2, '@joe', '2019-08-22 11:12:11')
 
         print(len(model.get_duels(1)))
 
         print(len(model.get_history(1)))
+
+        print(model.get_tournaments())
+        print(model.last_tournament_id())
 
         model.destory_tables()
     except:
