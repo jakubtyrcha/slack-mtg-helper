@@ -65,6 +65,97 @@ def pretty_history(history, duels_dict):
         return ["{}{}({})".format(entry.mod, entry.user, entry.id), "{} {}-{} {} {}".format(d.player0, d.score[0], d.score[1], d.player1, misc)]
     return tabulate([as_row(entry) for entry in history], headers = ['change', 'row'])
 
+class BlocksBuilder:
+    def __init__(self):
+        self.blocks = []
+
+    def divider(self):
+        self.blocks.append({'type': 'divider'})
+        return self
+
+    def section(self, text):
+        self.blocks.append({
+            'type': 'section',
+            'text': {
+                'type': 'mrkdwn',
+                'text': text
+            }
+        })
+        return self
+
+    def button(self, text, value):
+        self.blocks.append({
+            "type": "actions",
+            "elements": [ {
+                "type": "button",
+                "text": {
+                    "type": "plain_text",
+                    "text": text,
+                    "emoji": True
+                },
+                "value": value
+            }
+        ]})
+        return self
+
+    def with_select(self, text, list):
+        self.blocks[-1].update({
+            "accessory": {
+                "type": "static_select",
+                "placeholder": {
+                    "type": "plain_text",
+                    "text": text,
+                    "emoji": True
+                },
+                "options": [{
+                    "text": {
+                        "type": "plain_text",
+                        "text": x[0],
+                        "emoji": True
+                    },
+                    "value": x[1]
+                } for x in list]
+            }
+        })
+
+        return self
+
+    def with_overflow(self, text, list):
+        self.blocks[-1].update({
+            "accessory": {
+                "type": "overflow",
+                "options": [{
+                    "text": {
+                        "type": "plain_text",
+                        "text": x[0],
+                        "emoji": True
+                    },
+                    "value": x[1]
+                } for x in list]
+            }
+        })
+
+        return self
+
+    def with_select(self, text, list):
+        return self.with_multi("static_select", text, list)
+
+    def construct(self):
+        return self.blocks
+
+def markdown_tournaments_list(list):
+    b = BlocksBuilder().section("*Tournaments*")
+
+    for l in list:
+        b.section('*{}*'.format(l['name'])).with_overflow("Options", [
+            ("List duels", "list_duels;{}".format(str(l["id"]))),
+            ("Add duel", "add_duel;{}".format(str(l["id"]))),
+        ])
+
+    b.button("Create tournament", "add_tournament")
+
+    return b.construct()
+
 if __name__ == "__main__":
     duels = [Duel({'score': '2-1', 'id': 1, 'player0': '@joe', 'deleted': False, 'player1': '@jakub', 'tid': 1}),
              Duel({'score': '2-1', 'id': 2, 'player0': '@joe', 'deleted': False, 'player1': '@jakub', 'tid': 1}),
