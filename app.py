@@ -1,8 +1,8 @@
 from flask import abort, Flask, jsonify, request
-from cmds import Result, handle_command, on_create_tournament, on_add_duel, on_list_duels
+#from cmds import Result, handle_command, on_create_tournament, on_add_duel, on_list_duels, on_list_tournaments
 import os
 import json
-from dialog import CreateTournamentDialog, AddDuelDialog
+from dialogs import NewTournamentDialog, AddDuelDialog, BlocksBuilder
 
 app = Flask(__name__)
 
@@ -11,11 +11,91 @@ from slackclient import SlackClient
 slack_token = os.environ["SLACK_VERIFICATION_TOKEN"]
 slack_client = SlackClient("xoxb-571211179077-573885904464-TsLsBJyywxfhaLg3qFQrsRKg")
 
+LEGACY_SLACK_CLIENT_NOT_SUPPORTED = ""
+
+LOG_SERVER_RESPONSES = True
+
+from model import Model
+
+model = Model()
+model.init()
+
+def make_callback_value(*args):
+    return ";".join([str(a) for a in args])
+
+def parse_callback_value(value):
+    return value.split(";")
+
+def delete_tournament_entry(tournament_id):
+    pass
+
+def create_tournament_thread(tournament_id, channel_id, user_id, tournament_name):
+    blocks = BlocksBuilder().section("Tournament *{}*".format(tournament_name))\
+        .button("Add duel", make_callback_value("add_duel_dialog", tournament_id))\
+        .button("Delete tournament", make_callback_value("delete_tournament", [tournament_id]))
+
+    resp = slack_client.api_call(
+        "chat.postMessage",
+        channel=channel_id,
+        user=user_id,
+        blocks=blocks.construct(),
+        text=LEGACY_SLACK_CLIENT_NOT_SUPPORTED
+    )
+
+    if LOG_SERVER_RESPONSES:
+        print(resp)
+
+    if resp["ok"]:
+        model.register_tournament_thread_id(tournament_id, resp["ts"])
+    else:
+        # error message
+        delete_tournament_entry(tournament_id)
+
+def publish_duel_result(channel_id, thread_ts, tournament_id, duel_id, duel_score):
+    p0, score0 = duel_score[0]
+    p1, score1 = duel_score[1]
+    blocks = BlocksBuilder().section("{} {}-{} {}".format(p0, score0, p1, score1))\
+        .button("Delete", make_callback_value("delete_duel", tournament_id, duel_id))
+
+    slack_client.api_call(
+        "chat.postMessage",
+        channel=channel_id,
+        thread_ts=thread_ts,
+        blocks=blocks.construct(),
+        text=LEGACY_SLACK_CLIENT_NOT_SUPPORTED
+    )
+
 def is_request_valid(request):
     is_token_valid = request.form['token'] == os.environ['SLACK_VERIFICATION_TOKEN']
-    #is_team_id_valid = request.form['team_id'] == os.environ['SLACK_TEAM_ID']
+    return is_token_valid
 
-    return is_token_valid #and is_team_id_valid
+def create_new_tournament_dialog(trigger_id):
+    slack_client.api_call(
+        "dialog.open",
+        trigger_id=trigger_id,
+        dialog=NewTournamentDialog(slack_client, "New tournament wizard",
+                             make_callback_value("new_tournament_submitted")).construct()
+    )
+
+def create_add_duel_dialog(trigger_id, tournament_id):
+    slack_client.api_call(
+        "dialog.open",
+        trigger_id=trigger_id,
+        dialog=AddDuelDialog(slack_client, "Add duel wizard",
+                                   make_callback_value("new_duel_submitted"), str(tournament_id)).construct()
+    )
+
+def create_new_tournament(channel_id, user_id, name):
+    tournament_id = model.allocate_new_tournament_id()
+    model.create_tournament_row(tournament_id, channel_id, name)
+    thread_id = create_tournament_thread(tournament_id, channel_id, user_id, name)
+    if thread_id:
+        model.register_tournament_thread_id(tournament_id, thread_id)
+
+def add_new_duel(channel_id, user_id, tournament_id, duel_score):
+    duel_id = model.create_duel_row(channel_id, user_id, tournament_id, duel_score)
+    model.create_duel_row(channel_id, user_id, tournament_id, duel_score)
+    publish_duel_result(channel_id, model.query_tournament_thread_ts(tournament_id), tournament_id, duel_id, duel_score)
 
 @app.route('/mtg-util', methods=['POST'])
 def handle_util():
@@ -23,22 +103,13 @@ def handle_util():
     if not is_request_valid(request):
         abort(400)
 
-    user = request.form['user_name']
-    cmd = request.form['text'][:1000]
+    cmd = request.form['text']
 
-    result = handle_command(user, cmd)
-    if result:
-        if isinstance(result, Result):
-            if result.text or result.blocks:
-                if result.blocks:
-                    return jsonify(response_type='ephemeral', text=result.text, blocks = result.blocks)
-                return jsonify(response_type='ephemeral', text=result.text)
-            return ('', 200)
+    blocks = BlocksBuilder().button("Create new tournament", make_callback_value("new_tournament_dialog"))
 
-    return jsonify(
-        response_type='ephemeral',
-        text="Failed to handle the request, try 'help'?",
-    )
+    return jsonify(response_type='ephemeral', blocks=blocks.construct(), text=LEGACY_SLACK_CLIENT_NOT_SUPPORTED)
+
+    return ('', 200)
 
 @app.route('/mtg-util-dialog', methods=['POST'])
 def handle_dialog():
@@ -46,7 +117,8 @@ def handle_dialog():
     if not message_action['token'] == os.environ['SLACK_VERIFICATION_TOKEN']:
         abort(400)
 
-    print(message_action)
+    if LOG_SERVER_RESPONSES:
+        print(message_action)
 
     def get_username(message_action):
         if "user" in message_action["user"]:
@@ -57,56 +129,21 @@ def handle_dialog():
     user_id = message_action["user"]["id"]
     user_name = get_username(message_action)
 
-    CREATE_TOURNAMENT_CALLBACK = "create_tournament"
-    ADD_DUEL_CALLBACK = "add_duel"
-
     if message_action["type"] == "block_actions":
-
         for action in message_action["actions"]:
-
-            if action["type"] == "static_select" or action["type"] == "overflow":
-                print(action["selected_option"]["value"])
-
-                cmd_args = action["selected_option"]["value"].split(";")
-
-                if cmd_args[0] == "add_duel":
-                    slack_client.api_call(
-                        "dialog.open",
-                        trigger_id=message_action["trigger_id"],
-                        dialog=AddDuelDialog(slack_client, "Add duel",
-                                                      ADD_DUEL_CALLBACK, cmd_args[1]).construct()
-                    )
-                if cmd_args[0] == 'list_duels':
-                    result = on_list_duels(int(cmd_args[1]))
-
-                    r = slack_client.api_call(
-                        "chat.postEphemeral",
-                        channel=message_action["channel"]["id"],
-                        blocks=result.blocks,
-                        text=result.text,
-                        user=user_id
-                    )
-                    print(r)
-
             if action["type"] == "button":
-                if action["value"] == 'add_tournament':
-                    r = slack_client.api_call(
-                        "dialog.open",
-                        trigger_id=message_action["trigger_id"],
-                        dialog=CreateTournamentDialog(slack_client, "Create tournament", CREATE_TOURNAMENT_CALLBACK).construct()
-                    )
-                    print(r)
+                parsed = parse_callback_value(action["value"])
+                if parsed[0] == 'new_tournament_dialog':
+                    create_new_tournament_dialog(message_action["trigger_id"])
+                elif parsed[0] == 'add_duel_dialog':
+                    create_add_duel_dialog(message_action["trigger_id"], int(parsed[1]))
     elif message_action["type"] == "dialog_submission":
-        if message_action["callback_id"] == CREATE_TOURNAMENT_CALLBACK:
-            name = message_action["submission"]["name"]
-            on_create_tournament(user_name, name)
-        elif message_action["callback_id"] == ADD_DUEL_CALLBACK:
-            print(message_action["submission"])
-            player0 = message_action["submission"]["player_0"]
-            player1 = message_action["submission"]["player_1"]
-            score0 = int(message_action["submission"]["score_0"])
-            score1 = int(message_action["submission"]["score_1"])
-            tid = int(message_action["state"])
-            on_add_duel(tid, user_name, player0, player1, (score0, score1))
+        if message_action["callback_id"] == 'new_tournament_submitted':
+            create_new_tournament(message_action["channel"]["id"], user_id, message_action["submission"]["name"])
+        if message_action["callback_id"] == 'new_duel_submitted':
+            tournament_id = int(message_action["state"])
+            duel_score = ((message_action["submission"]["p0"], int(message_action["submission"]["score0"])),
+                          (message_action["submission"]["p1"], int(message_action["submission"]["score1"])))
+            add_new_duel(message_action["channel"]["id"], user_id, tournament_id, duel_score)
 
     return ('', 200)
