@@ -21,6 +21,7 @@ LEGACY_SLACK_CLIENT_NOT_SUPPORTED = ""
 LOG_SERVER_RESPONSES = True
 
 from model import Model
+from itertools import product, groupby
 
 model = Model()
 model.init()
@@ -34,7 +35,7 @@ def parse_callback_value(value):
 def create_tournament_thread(tournament_id, channel_id, user_id, user_name, tournament_name, date):
     blocks = BlocksBuilder().section("Tournament *{}*".format(tournament_name))\
         .button("Add duel", make_callback_value("add_duel_dialog", tournament_id)) \
-        .button("Current standing", make_callback_value("tournament_raport", tournament_id)) \
+        .button("Current standing", make_callback_value("tournament_report", tournament_id)) \
         .button("Close tournament", make_callback_value("close_tournanent", tournament_id)) \
         .button("Delete tournament", make_callback_value("delete_tournament", tournament_id)) \
             .with_confirm_simple("Are you sure?", "Delete tournament", "Cancel") \
@@ -142,6 +143,65 @@ def delete_tournament_and_remove_thread(channel_id, tournament_id):
         ts=model.query_tournament_thread_ts(tournament_id)
     )
 
+def prepare_tournament_report(channel_id, tournament_id, user_id):
+    duels = model.query_duels(tournament_id)
+
+    players = sorted(list(set([x['p0'] for x in duels]) | set([x['p1'] for x in duels])))
+    user_index = dict([(u, i) for i, u in enumerate(players)])
+    matrix = [[(0, 0) for _ in players] for _ in players]
+
+    for r in duels:
+        ai = user_index[r['p0']]
+        bi = user_index[r['p1']]
+        wa, g = matrix[ai][bi]
+        wb, _ = matrix[bi][ai]
+        s0 = int(r['score0'])
+        s1 = int(r['score1'])
+        g += s0 + s1
+        matrix[ai][bi] = (wa + s0, g)
+        matrix[bi][ai] = (wb + s1, g)
+
+    missing_duels = []
+    points = dict([(p, 0) for p in players])
+
+    for i, j in product(range(len(matrix)), repeat=2):
+        if i >= j:
+            continue
+        if sum(matrix[i][j]) < 3 or matrix[i][j][0] == matrix[i][j][1]:
+            missing_duels.append((players[i], players[j]))
+        else:
+            if matrix[i][j][0] > matrix[i][j][1]:
+                points[players[i]] += 1
+            else:
+                points[players[j]] += 1
+
+    ranking = sorted(list(points.items()), key=lambda x:-x[1])
+
+    place = 1
+    rank = []
+    for k, g in groupby(ranking, key=lambda x:x[1]):
+        rank.append((place, list(g)))
+        place += len(rank[-1][1])
+
+    blocks = BlocksBuilder().section("Current tournament standing:")
+
+    print(rank)
+
+    for r in rank:
+        blocks = blocks.section("{}. {}".format(r[0], ", ".join([x[0] for x in r[1]])))
+    blocks.context("pairs with draws or not enough games: " + ', '.join(["({}, {})".format(d[0], d[1]) for d in missing_duels]))
+
+    resp = slack_client.api_call(
+        "chat.postEphemeral",
+        channel=channel_id,
+        blocks=blocks.construct(),
+        text=LEGACY_SLACK_CLIENT_NOT_SUPPORTED,
+        user=user_id
+    )
+
+    if LOG_SERVER_RESPONSES:
+        print(resp)
+
 @app.route('/mtg-util', methods=['POST'])
 def handle_util():
     print(request.form)
@@ -188,6 +248,8 @@ def handle_dialog():
                     delete_duel_and_update_message(message_action["channel"]["id"], int(parsed[1]), int(parsed[2]), message_action["message"]["ts"], user_name)
                 elif parsed[0] == 'delete_tournament':
                     delete_tournament_and_remove_thread(message_action["channel"]["id"], int(parsed[1]))
+                elif parsed[0] == 'tournament_report':
+                    prepare_tournament_report(message_action["channel"]["id"], int(parsed[1]), user_id)
     elif message_action["type"] == "dialog_submission":
         if message_action["callback_id"] == 'new_tournament_submitted':
             create_new_tournament(message_action["channel"]["id"], user_id, user_name, message_action["submission"]["name"], date_token_now())
