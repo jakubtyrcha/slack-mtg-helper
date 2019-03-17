@@ -14,7 +14,7 @@ app = Flask(__name__)
 from slackclient import SlackClient
 
 slack_token = os.environ["SLACK_VERIFICATION_TOKEN"]
-slack_client = SlackClient("xoxb-571211179077-573885904464-TsLsBJyywxfhaLg3qFQrsRKg")
+slack_client = SlackClient(os.environ["SLACK_BOT_TOKEN"])
 
 LEGACY_SLACK_CLIENT_NOT_SUPPORTED = ""
 
