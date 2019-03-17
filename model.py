@@ -164,7 +164,7 @@ class Model:
         )
         return resp['Items'][0]['thread_ts']
 
-    def create_duel_row(self, channel_id, user_id, tournament_id, duel_score):
+    def create_duel_row(self, channel_id, user_id, tournament_id, duel_score, user_name, date):
         response = self.tournaments_table.update_item(
             Key={
                 'id': tournament_id
@@ -186,24 +186,36 @@ class Model:
                 'score0': duel_score[0][1],
                 'score1': duel_score[1][1],
                 'deleted': False,
-                'ts' : 'missing'
+                'ts' : 'none',
+                'added_by' : user_name,
+                'added_date' : date,
+                'deleted_by' : 'none',
+                'deleted_date' : 'none'
             }
         )
 
         return duel_id
 
-    def delete_duel(self, tournament_id, duel_id):
+    def delete_duel(self, tournament_id, duel_id, user_name, date):
         response = self.duels_table.update_item(
             Key={
                 'id': duel_id,
                 'tournament_id' : tournament_id
             },
-            UpdateExpression="set deleted = :val",
+            UpdateExpression="set deleted = :val, deleted_by = :a, deleted_date = :d",
             ExpressionAttributeValues={
-                ':val': True
+                ':val': True,
+                ':a' : user_name,
+                ':d' : date
             },
             ReturnValues="UPDATED_NEW"
         )
+
+    def query_duel(self, tournament_id, duel_id):
+        resp = self.duels_table.query(
+            KeyConditionExpression=Key('id').eq(duel_id) & Key('tournament_id').eq(tournament_id)
+        )
+        return resp['Items'][0]
 
     def remove_tournament(self, tournament_id):
         self.tournaments_table.delete_item(

@@ -31,13 +31,13 @@ def make_callback_value(*args):
 def parse_callback_value(value):
     return value.split(";")
 
-def create_tournament_thread(tournament_id, channel_id, user_id, tournament_name, date):
+def create_tournament_thread(tournament_id, channel_id, user_id, user_name, tournament_name, date):
     blocks = BlocksBuilder().section("Tournament *{}*".format(tournament_name))\
         .button("Add duel", make_callback_value("add_duel_dialog", tournament_id)) \
         .button("Current standing", make_callback_value("tournament_raport", tournament_id)) \
         .button("Close tournament", make_callback_value("close_tournanent", tournament_id)) \
         .button("Delete tournament", make_callback_value("delete_tournament", tournament_id)) \
-        .context("Created {} by {}".format(pretty_date(date), user_id))
+        .context("created {} by {}".format(pretty_date(date), user_name))
 
     resp = slack_client.api_call(
         "chat.postMessage",
@@ -56,11 +56,12 @@ def create_tournament_thread(tournament_id, channel_id, user_id, tournament_name
         # error message
         model.remove_tournament(tournament_id)
 
-def publish_duel_result(channel_id, thread_ts, tournament_id, duel_id, duel_score):
+def publish_duel_result(channel_id, thread_ts, tournament_id, duel_id, duel_score, user_name, date):
     p0, score0 = duel_score[0]
     p1, score1 = duel_score[1]
-    blocks = BlocksBuilder().section("{} {}-{} {}".format(p0, score0, score1, p1))\
-        .button("Delete", make_callback_value("delete_duel", tournament_id, duel_id))
+    blocks = BlocksBuilder().section("_{}_ {}-{} _{}_".format(p0, score0, score1, p1))\
+        .button("Delete", make_callback_value("delete_duel", tournament_id, duel_id))\
+        .context("added {} by {}".format(pretty_date(date), user_name))
 
     resp = slack_client.api_call(
         "chat.postMessage",
@@ -96,31 +97,39 @@ def create_add_duel_dialog(trigger_id, tournament_id):
                                    make_callback_value("new_duel_submitted"), str(tournament_id)).construct()
     )
 
-def create_new_tournament(channel_id, user_id, name, date):
+def create_new_tournament(channel_id, user_id, user_name, name, date):
     tournament_id = model.allocate_new_tournament_id()
     model.create_tournament_row(tournament_id, channel_id, name, date)
-    thread_id = create_tournament_thread(tournament_id, channel_id, user_id, name, date)
+    thread_id = create_tournament_thread(tournament_id, channel_id, user_id, user_name, name, date)
     if thread_id:
         model.register_tournament_thread_ts(tournament_id, thread_id)
 
-def add_new_duel(channel_id, user_id, tournament_id, duel_score):
-    duel_id = model.create_duel_row(channel_id, user_id, tournament_id, duel_score)
-    model.create_duel_row(channel_id, user_id, tournament_id, duel_score)
-    publish_duel_result(channel_id, model.query_tournament_thread_ts(tournament_id), tournament_id, duel_id, duel_score)
+def add_new_duel(channel_id, user_id, tournament_id, duel_score, user_name):
+    date = date_token_now()
+    duel_id = model.create_duel_row(channel_id, user_id, tournament_id, duel_score, user_name, date)
+    publish_duel_result(channel_id, model.query_tournament_thread_ts(tournament_id), tournament_id, duel_id, duel_score, user_name, date)
 
-def delete_duel_and_update_message(channel_id, tournament_id, duel_id, message_ts):
-    model.delete_duel(tournament_id, duel_id)
-    #p0, score0 = duel_score[0]
-    #p1, score1 = duel_score[1]
-    blocks = BlocksBuilder().section("DELETED")
+def delete_duel_and_update_message(channel_id, tournament_id, duel_id, message_ts, user_name):
+    q = model.query_duel(tournament_id, duel_id)
+    duel_score = ((q['p0'], int(q['score0'])), (q['p1'], int(q['score1'])))
+    p0, score0 = duel_score[0]
+    p1, score1 = duel_score[1]
+    date = date_token_now()
+    model.delete_duel(tournament_id, duel_id, user_name, date)
+    blocks = BlocksBuilder().section("~_{}_ {}-{} _{}_~".format(p0, score0, score1, p1)) \
+        .context("added {} by {}".format(pretty_date(q['added_date']), q['added_by']))\
+        .context("deleted {} by {}".format(pretty_date(date), user_name))
 
-    slack_client.api_call(
+    resp = slack_client.api_call(
         "chat.update",
         channel=channel_id,
         ts=message_ts,
         blocks=blocks.construct(),
         text=LEGACY_SLACK_CLIENT_NOT_SUPPORTED
     )
+
+    if LOG_SERVER_RESPONSES:
+        print(resp)
 
 def delete_tournament_and_remove_thread(channel_id, tournament_id):
     model.delete_tournament(channel_id, tournament_id)
@@ -159,6 +168,8 @@ def handle_dialog():
             return message_action["user"]["user"]
         elif "username" in message_action["user"]:
             return message_action["user"]["username"]
+        elif "name" in message_action["user"]:
+            return message_action["user"]["name"]
 
     user_id = message_action["user"]["id"]
     user_name = get_username(message_action)
@@ -172,16 +183,16 @@ def handle_dialog():
                 elif parsed[0] == 'add_duel_dialog':
                     create_add_duel_dialog(message_action["trigger_id"], int(parsed[1]))
                 elif parsed[0] == 'delete_duel':
-                    delete_duel_and_update_message(message_action["channel"]["id"], int(parsed[1]), int(parsed[2]), message_action["message"]["ts"])
+                    delete_duel_and_update_message(message_action["channel"]["id"], int(parsed[1]), int(parsed[2]), message_action["message"]["ts"], user_name)
                 elif parsed[0] == 'delete_tournament':
                     delete_tournament_and_remove_thread(message_action["channel"]["id"], int(parsed[1]))
     elif message_action["type"] == "dialog_submission":
         if message_action["callback_id"] == 'new_tournament_submitted':
-            create_new_tournament(message_action["channel"]["id"], user_id, message_action["submission"]["name"], date_token_now())
+            create_new_tournament(message_action["channel"]["id"], user_id, user_name, message_action["submission"]["name"], date_token_now())
         if message_action["callback_id"] == 'new_duel_submitted':
             tournament_id = int(message_action["state"])
             duel_score = ((message_action["submission"]["p0"], int(message_action["submission"]["score0"])),
                           (message_action["submission"]["p1"], int(message_action["submission"]["score1"])))
-            add_new_duel(message_action["channel"]["id"], user_id, tournament_id, duel_score)
+            add_new_duel(message_action["channel"]["id"], user_id, tournament_id, duel_score, user_name)
 
     return ('', 200)
