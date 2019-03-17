@@ -123,16 +123,19 @@ class Model:
         )
         return int(response['Attributes']['global_tournament_id'])
 
-    def create_tournament_row(self, tournament_id, channel_id, name):
+    def create_tournament_row(self, tournament_id, channel_id, name, date):
         response = self.tournaments_table.put_item(
             Item={
                 'id': tournament_id,
                 'channel_id': channel_id,
-                'name': name
+                'name': name,
+                'deleted' : False,
+                'closed' : False,
+                'date' : date
             }
         )
 
-    def register_tournament_thread_id(self, tournament_id, thread_ts):
+    def register_tournament_thread_ts(self, tournament_id, thread_ts):
         response = self.tournaments_table.update_item(
             Key={
                 'id': tournament_id
@@ -140,6 +143,18 @@ class Model:
             UpdateExpression="set thread_ts = :val",
             ExpressionAttributeValues={
                 ':val': thread_ts
+            }
+        )
+
+    def register_duel_message_ts(self, tournament_id, duel_id, ts):
+        response = self.duels_table.update_item(
+            Key={
+                'id': duel_id,
+                'tournament_id' : tournament_id
+            },
+            UpdateExpression="set message_ts = :val",
+            ExpressionAttributeValues={
+                ':val': ts
             }
         )
 
@@ -165,15 +180,49 @@ class Model:
         response = self.duels_table.put_item(
             Item={
                 'id': duel_id,
-                'tournament_id' : tournament_id,
-                'p0' : duel_score[0][0],
-                'p1' : duel_score[1][0],
-                'score0' : duel_score[0][1],
-                'score1' : duel_score[1][1],
+                'tournament_id': tournament_id,
+                'p0': duel_score[0][0],
+                'p1': duel_score[1][0],
+                'score0': duel_score[0][1],
+                'score1': duel_score[1][1],
+                'deleted': False,
+                'ts' : 'missing'
             }
         )
 
         return duel_id
+
+    def delete_duel(self, tournament_id, duel_id):
+        response = self.duels_table.update_item(
+            Key={
+                'id': duel_id,
+                'tournament_id' : tournament_id
+            },
+            UpdateExpression="set deleted = :val",
+            ExpressionAttributeValues={
+                ':val': True
+            },
+            ReturnValues="UPDATED_NEW"
+        )
+
+    def remove_tournament(self, tournament_id):
+        self.tournaments_table.delete_item(
+            Key={
+                'id': tournament_id
+            }
+        )
+
+    def delete_tournament(self, channel_id, tournament_id):
+        response = self.tournaments_table.update_item(
+            Key={
+                'id': tournament_id
+            },
+            UpdateExpression="set deleted = :val",
+            ExpressionAttributeValues={
+                ':val': True
+            },
+            ReturnValues="UPDATED_NEW"
+        )
 
 if __name__ == "__main__":
     model = Model()

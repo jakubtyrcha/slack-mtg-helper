@@ -1,0 +1,5 @@
+venv
+awscli-bundle.zip
+.idea
+awscli-bundle
+__pycache__

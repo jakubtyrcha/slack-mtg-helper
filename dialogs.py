@@ -125,8 +125,16 @@ class BlocksBuilder:
 
         return self
 
-    def with_select(self, text, list):
-        return self.with_multi("static_select", text, list)
+    def context(self, text):
+        self.blocks.append({
+            "type": "context",
+            "elements": [{
+                "type": "plain_text",
+                "text": text,
+                "emoji": True
+            }]
+        })
+        return self
 
     def construct(self):
         return self.blocks
