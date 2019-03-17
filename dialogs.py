@@ -86,6 +86,48 @@ class BlocksBuilder:
         ]})
         return self
 
+    def with_confirm_simple(self, title, yes, no):
+        self.blocks[-1]['elements'][-1].update({
+            "confirm": {
+                "title": {
+                    "type": "plain_text",
+                    "text": title
+                },
+                "confirm": {
+                    "type": "plain_text",
+                    "text": yes
+                },
+                "deny": {
+                    "type": "plain_text",
+                    "text": no
+                }
+            }
+        })
+        return self
+
+    def with_confirm(self, title, text, yes, no):
+        self.blocks[-1]['elements'][-1].update({
+            "confirm": {
+                "title": {
+                    "type": "plain_text",
+                    "text": title
+                },
+                "text": {
+                    "type": "plain_text",
+                    "text": text
+                },
+                "confirm": {
+                    "type": "plain_text",
+                    "text": yes
+                },
+                "deny": {
+                    "type": "plain_text",
+                    "text": no
+                }
+            }
+        })
+        return self
+
     def with_select(self, text, list):
         self.blocks[-1].update({
             "accessory": {

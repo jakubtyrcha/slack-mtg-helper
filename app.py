@@ -37,6 +37,7 @@ def create_tournament_thread(tournament_id, channel_id, user_id, user_name, tour
         .button("Current standing", make_callback_value("tournament_raport", tournament_id)) \
         .button("Close tournament", make_callback_value("close_tournanent", tournament_id)) \
         .button("Delete tournament", make_callback_value("delete_tournament", tournament_id)) \
+            .with_confirm_simple("Are you sure?", "Delete tournament", "Cancel") \
         .context("created {} by {}".format(pretty_date(date), user_name))
 
     resp = slack_client.api_call(
@@ -60,7 +61,8 @@ def publish_duel_result(channel_id, thread_ts, tournament_id, duel_id, duel_scor
     p0, score0 = duel_score[0]
     p1, score1 = duel_score[1]
     blocks = BlocksBuilder().section("_{}_ {}-{} _{}_".format(p0, score0, score1, p1))\
-        .button("Delete", make_callback_value("delete_duel", tournament_id, duel_id))\
+        .button("Delete", make_callback_value("delete_duel", tournament_id, duel_id)) \
+            .with_confirm_simple("Are you sure?", "Delete duel", "Cancel") \
         .context("added {} by {}".format(pretty_date(date), user_name))
 
     resp = slack_client.api_call(
