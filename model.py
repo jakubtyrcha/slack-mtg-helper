@@ -158,6 +158,31 @@ class Model:
             }
         )
 
+    def settle_winner(self, tournament_id, player):
+        try:
+            response = self.tournaments_table.update_item(
+                Key={
+                    'id': tournament_id
+                },
+                UpdateExpression="set winner = :val, closed = :c",
+                ConditionExpression="closed = :cv",
+                ExpressionAttributeValues={
+                    ':val': player,
+                    ':c': True,
+                    ':cv' : False
+                }
+            )
+
+            return True
+        except self.dynamodb_client.exceptions.ConditionalCheckFailedException:
+            return False
+
+    def query_tournament(self, tournament_id):
+        resp = self.tournaments_table.query(
+            KeyConditionExpression=Key('id').eq(tournament_id)
+        )
+        return resp['Items'][0]
+
     def query_tournament_thread_ts(self, tournament_id):
         resp = self.tournaments_table.query(
             KeyConditionExpression=Key('id').eq(tournament_id)
@@ -186,11 +211,8 @@ class Model:
                 'score0': duel_score[0][1],
                 'score1': duel_score[1][1],
                 'deleted': False,
-                'ts' : 'none',
                 'added_by' : user_name,
-                'added_date' : date,
-                'deleted_by' : 'none',
-                'deleted_date' : 'none'
+                'added_date' : date
             }
         )
 
