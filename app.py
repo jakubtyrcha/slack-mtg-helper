@@ -168,12 +168,14 @@ def get_current_ranking(duels):
         if sum(matrix[i][j]) < 3 or matrix[i][j][0] == matrix[i][j][1]:
             missing_duels.append((players[i], players[j]))
         else:
-            if matrix[i][j][0] > matrix[i][j][1]:
+            if matrix[i][j][0] > matrix[j][i][0]:
                 points[players[i]] += 1
             else:
                 points[players[j]] += 1
 
     ranking = sorted(list(points.items()), key=lambda x: -x[1])
+    print(matrix)
+    print(user_index)
 
     place = 1
     rank = []
@@ -189,9 +191,23 @@ def prepare_tournament_report(channel_id, tournament_id, user_id):
 
     blocks = BlocksBuilder().section("Current tournament standing:")
 
+    resp = slack_client.api_call(
+        "conversations.open",
+        users=user_id
+    )
+
+    if LOG_SERVER_RESPONSES:
+        print(resp)
+
+    if not resp['ok']:
+        return
+
+    channel_id = resp['channel']['id']
+
     for r in rank:
-        blocks = blocks.section("{}. {}".format(r[0], ", ".join([x[0] for x in r[1]])))
-    blocks.context("pairs with draws or not enough games: " + ', '.join(["({}, {})".format(d[0], d[1]) for d in missing_duels]))
+        blocks = blocks.section("{}. {}".format(r[0], ", ".join(["{} ({} pts)".format(x[0], x[1]) for x in r[1]])))
+    if len(missing_duels):
+        blocks.context("pairs with draws or not enough games: " + ', '.join(["({}, {})".format(d[0], d[1]) for d in missing_duels]))
 
     resp = slack_client.api_call(
         "chat.postEphemeral",
@@ -313,3 +329,6 @@ def handle_dialog():
             add_new_duel(message_action["channel"]["id"], user_id, tournament_id, duel_score, user_name)
 
     return ('', 200)
+
+if __name__ == '__main__':
+    app.run()

@@ -1,11 +1,16 @@
 from __future__ import print_function # Python 2/3 compatibility
 import boto3
 from boto3.dynamodb.conditions import Key, Attr
+import os
 
 class Model:
-    def __init__(self):
+    def __init__(self, endpoint = None):
         self.dynamodb_client = boto3.client('dynamodb')
-        self.dynamodb = boto3.resource('dynamodb', region_name='us-west-2', endpoint_url="http://localhost:8000")
+        if endpoint:
+            self.dynamodb = boto3.resource('dynamodb', region_name='us-west-2', endpoint_url="http://localhost:8000")
+        else:
+            self.dynamodb = boto3.resource('dynamodb')
+            #, region_name='london', aws_access_key_id=os.environ["AWS_ACCESS_KEY"], aws_secret_access_key=os.environ["AWS_SECRET_KEY"]
         self.tournaments_table = None
         self.duels_table = None
         self.id_table = None
@@ -89,7 +94,7 @@ class Model:
                     },
                     {
                         'AttributeName': 'id',
-                        'KeyType': 'Range'
+                        'KeyType': 'RANGE'
                     },
                 ],
                 AttributeDefinitions=[
@@ -272,6 +277,8 @@ if __name__ == "__main__":
         model.create_tables()
         model.destory_tables()
         model.create_tables()
+
+        print(model.allocate_new_tournament_id())
 
     except:
         model.destory_tables()
